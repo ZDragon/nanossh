@@ -1,6 +1,6 @@
 appId: com.sshclient.app
 productName: SSH Client
-copyright: Copyright © ${year} Alexander Kozlov (Silver Dragon)
+copyright: Copyright © 2026 Alexander Kozlov (Silver Dragon)
 
 directories:
   output: release
