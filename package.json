@@ -1,9 +1,17 @@
 {
   "name": "ssh-client",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Cross-platform SSH/SFTP desktop client (Windows, macOS, Linux)",
-  "author": "Alexander Kozlov (Silver Dragon)",
+  "author": {
+    "name": "Alexander Kozlov (Silver Dragon)",
+    "email": "dragon@silnote.net"
+  },
+  "homepage": "https://github.com/ZDragon/nanossh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZDragon/nanossh.git"
+  },
   "license": "MIT",
   "main": "out/main/index.js",
   "scripts": {
