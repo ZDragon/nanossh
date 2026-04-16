@@ -1,0 +1,31 @@
+appId: com.sshclient.app
+productName: SSH Client
+copyright: Copyright © ${year} Alexander Kozlov (Silver Dragon)
+
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - out/**
+  - package.json
+
+asarUnpack:
+  # ssh2 pulls optional native addon cpu-features; keep it unpacked
+  - node_modules/ssh2/**
+  - node_modules/cpu-features/**
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: SSH Client
+  createDesktopShortcut: true
