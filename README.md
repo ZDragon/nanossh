@@ -35,9 +35,19 @@ This starts `electron-vite dev` with HMR for the renderer and reload for main/pr
 ## Build a production bundle
 
 ```bash
-npm run build         # transpile only; output in out/
-npm run package       # bundle + electron-builder → release/*.exe (NSIS + portable)
+npm run build            # transpile only; output in out/
+npm run package          # bundle + installers for the current OS
+npm run package:win      # Windows NSIS + portable (x64)
+npm run package:mac      # macOS DMG + ZIP (x64 + arm64)
+npm run package:linux    # Linux AppImage + deb + rpm + tar.gz (x64 + arm64 where applicable)
+npm run package:all      # -mwl (all three; only meaningful on macOS / with CI)
 ```
+
+**Cross-compilation caveats:**
+
+- Building `.dmg` / signing `.app` requires running on macOS. You can only cross-compile unsigned `.zip`/`.tar.gz` bundles from Windows/Linux.
+- Building `.rpm` from a non-RPM host needs the `rpm` / `rpmbuild` binary in PATH (install via `rpmbuild` on Ubuntu/Debian).
+- For hassle-free multi-platform releases use GitHub Actions — a matrix across `windows-latest` / `macos-latest` / `ubuntu-latest` with `npm ci && npm run package` is the standard approach.
 
 ## Port forwarding
 
