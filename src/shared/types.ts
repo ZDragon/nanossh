@@ -27,6 +27,14 @@ export interface ConnectionConfig {
   auth: StoredAuth
   keepaliveSec?: number
   proxyJump?: string
+  /**
+   * When true, append a set of deprecated algorithms to the ssh2 defaults so
+   * we can talk to ancient OpenSSH servers that only offer e.g.
+   * `ssh-rsa` / `ssh-dss` host keys, `diffie-hellman-group1-sha1` KEX,
+   * `3des-cbc` ciphers, or `hmac-sha1`/`hmac-md5` MACs. Opt-in because
+   * these algorithms are weak and disabled by default for a reason.
+   */
+  allowLegacyAlgorithms?: boolean
   createdAt: number
   updatedAt: number
 }
@@ -39,6 +47,9 @@ export interface ConnectionMeta {
   port: number
   username: string
   authKind: AuthKind
+  keepaliveSec?: number
+  proxyJump?: string
+  allowLegacyAlgorithms?: boolean
   createdAt: number
   updatedAt: number
 }
@@ -52,6 +63,7 @@ export interface SaveConnectionInput {
   auth: AuthInput
   keepaliveSec?: number
   proxyJump?: string
+  allowLegacyAlgorithms?: boolean
 }
 
 export interface SftpEntry {

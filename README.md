@@ -125,6 +125,7 @@ Secrets live in `%APPDATA%/<app>/connections.json` and are encrypted per-user vi
 
 ## Troubleshooting
 
+- **`Unable to negotiate ... no matching host key type found. Their offer: ssh-rsa,ssh-dss`** (or similar "no matching KEX / cipher / MAC" error) — the server only offers deprecated algorithms. Edit the connection → tick **Allow legacy algorithms**. That appends `ssh-rsa` / `ssh-dss` host keys, `diffie-hellman-group{1,14}-sha1` and `diffie-hellman-group-exchange-sha1` KEX, CBC ciphers, and `hmac-sha1` / `hmac-md5` MACs to the defaults. Opt-in per host because these are weak.
 - **`sftp:list` → "administratively prohibited"** — the server has SFTP subsystem disabled. Enable `Subsystem sftp /usr/lib/openssh/sftp-server` (or `internal-sftp`) in `/etc/ssh/sshd_config` and reload sshd. The terminal will still work even if SFTP does not.
 - **Editor doesn't launch** — verify the command runs from a cmd.exe window. Paths with spaces must be quoted. Empty command falls back to `shell.openPath` (the system default).
 - **Changes in the editor don't upload** — the watcher polls `mtime` every 1 s. Some editors save via an atomic rename; if the mtime doesn't move, save again to nudge it. Error details appear in the Active edits panel.

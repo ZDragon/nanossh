@@ -19,6 +19,7 @@ type FormState = {
   passphrase: string
   keepaliveSec: string
   proxyJump: string
+  allowLegacyAlgorithms: boolean
   keepExistingAuth: boolean
 }
 
@@ -32,8 +33,9 @@ function emptyForm(initial?: ConnectionMeta): FormState {
     password: '',
     keyPath: '',
     passphrase: '',
-    keepaliveSec: '',
-    proxyJump: '',
+    keepaliveSec: initial?.keepaliveSec ? String(initial.keepaliveSec) : '',
+    proxyJump: initial?.proxyJump ?? '',
+    allowLegacyAlgorithms: Boolean(initial?.allowLegacyAlgorithms),
     keepExistingAuth: Boolean(initial)
   }
 }
@@ -92,7 +94,8 @@ export function ConnectionDialog({ initial, onClose, onSubmit }: Props): JSX.Ele
       username: form.username.trim(),
       auth: buildAuth(),
       keepaliveSec: form.keepaliveSec ? Number(form.keepaliveSec) : undefined,
-      proxyJump: form.proxyJump.trim() || undefined
+      proxyJump: form.proxyJump.trim() || undefined,
+      allowLegacyAlgorithms: form.allowLegacyAlgorithms || undefined
     }
 
     setSubmitting(true)
@@ -241,6 +244,25 @@ export function ConnectionDialog({ initial, onClose, onSubmit }: Props): JSX.Ele
               placeholder="user@jump:22"
             />
           </Field>
+
+          <label
+            className="col-span-2 flex items-start gap-2 text-xs cursor-pointer select-none mt-1"
+            title="Enable ssh-rsa / ssh-dss host keys, diffie-hellman-group1-sha1 KEX, CBC ciphers, hmac-sha1/md5. Only needed for very old servers."
+          >
+            <input
+              type="checkbox"
+              checked={form.allowLegacyAlgorithms}
+              onChange={(e) => update('allowLegacyAlgorithms', e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <span className="text-fg">Allow legacy algorithms</span>
+              <span className="text-muted block leading-tight">
+                Fixes "no matching host key type" / KEX / cipher errors with very old OpenSSH,
+                dropbear, or network-device SSH. Weakens security — opt-in per host.
+              </span>
+            </span>
+          </label>
         </div>
 
         {error && (

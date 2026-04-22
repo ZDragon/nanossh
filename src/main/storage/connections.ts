@@ -59,6 +59,9 @@ function toMeta(c: ConnectionConfig): ConnectionMeta {
     port: c.port,
     username: c.username,
     authKind: c.auth.kind,
+    keepaliveSec: c.keepaliveSec,
+    proxyJump: c.proxyJump,
+    allowLegacyAlgorithms: c.allowLegacyAlgorithms,
     createdAt: c.createdAt,
     updatedAt: c.updatedAt
   }
@@ -114,6 +117,7 @@ export async function saveConnection(input: SaveConnectionInput): Promise<Connec
       auth: buildStoredAuth(input.auth, previous.auth),
       keepaliveSec: input.keepaliveSec,
       proxyJump: input.proxyJump,
+      allowLegacyAlgorithms: input.allowLegacyAlgorithms,
       updatedAt: now
     }
     s.connections[idx] = updated
@@ -134,6 +138,7 @@ export async function saveConnection(input: SaveConnectionInput): Promise<Connec
     auth: buildStoredAuth(input.auth),
     keepaliveSec: input.keepaliveSec,
     proxyJump: input.proxyJump,
+    allowLegacyAlgorithms: input.allowLegacyAlgorithms,
     createdAt: now,
     updatedAt: now
   }

@@ -1,6 +1,6 @@
 {
   "name": "ssh-client",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Cross-platform SSH/SFTP desktop client (Windows, macOS, Linux)",
   "author": {

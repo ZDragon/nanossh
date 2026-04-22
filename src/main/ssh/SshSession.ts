@@ -64,6 +64,33 @@ export class SshSession {
         break
     }
 
+    if (config.allowLegacyAlgorithms) {
+      // Append deprecated but still occasionally-needed algorithms so we can
+      // talk to very old OpenSSH / dropbear / network-device SSH stacks that
+      // only offer ssh-rsa / ssh-dss host keys, SHA-1 KEX/MAC, CBC ciphers
+      // etc. ssh2's default list rejects these out of the box.
+      //
+      // @types/ssh2 models `AlgorithmList<T>` as a bare array and does not
+      // expose the `{ append, prepend, remove }` form that ssh2 actually
+      // accepts at runtime, so we cast through `unknown`.
+      base.algorithms = {
+        serverHostKey: { append: ['ssh-rsa', 'ssh-dss'] },
+        kex: {
+          append: [
+            'diffie-hellman-group14-sha1',
+            'diffie-hellman-group1-sha1',
+            'diffie-hellman-group-exchange-sha1'
+          ]
+        },
+        cipher: {
+          append: ['aes128-cbc', 'aes192-cbc', 'aes256-cbc', '3des-cbc']
+        },
+        hmac: {
+          append: ['hmac-sha1', 'hmac-md5']
+        }
+      } as unknown as ConnectConfig['algorithms']
+    }
+
     const client = new Client()
     this.client = client
 
