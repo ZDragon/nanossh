@@ -47,9 +47,12 @@ export class SshSession {
       readyTimeout: 20_000
     }
 
+    let passwordForKbd: string | null = null
+
     switch (config.auth.kind) {
       case 'password':
         base.password = decryptString(config.auth.passwordCipher)
+        passwordForKbd = base.password
         break
       case 'privateKey': {
         const key = await fs.readFile(config.auth.keyPath)
@@ -63,6 +66,13 @@ export class SshSession {
         base.agent = process.env.SSH_AUTH_SOCK || 'pageant'
         break
     }
+
+    // Some old / embedded SSH servers advertise ONLY the
+    // `keyboard-interactive` auth method, even when the user is really typing
+    // a password. Turning on `tryKeyboard` lets ssh2 fall through to it, and
+    // we answer every prompt with the stored password. Cisco / dropbear /
+    // pre-7.x OpenSSH often need this.
+    base.tryKeyboard = true
 
     if (config.allowLegacyAlgorithms) {
       // Append deprecated but still occasionally-needed algorithms so we can
@@ -93,6 +103,16 @@ export class SshSession {
 
     const client = new Client()
     this.client = client
+
+    // Answer keyboard-interactive prompts with the saved password. Only a
+    // single password is stored, so we send the same string for every prompt
+    // — which matches how `ssh` itself behaves in practice.
+    if (passwordForKbd != null) {
+      const pw = passwordForKbd
+      client.on('keyboard-interactive', (_name, _instructions, _lang, prompts, finish) => {
+        finish(prompts.map(() => pw))
+      })
+    }
 
     await new Promise<void>((resolve, reject) => {
       const onReady = (): void => {
