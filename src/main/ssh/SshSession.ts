@@ -1,6 +1,6 @@
 import { Client, type ClientChannel, type ConnectConfig, type SFTPWrapper } from 'ssh2'
 import { promises as fs } from 'node:fs'
-import { basename, posix } from 'node:path'
+import { dirname as localDirname, join as localJoin, posix, sep as localSep } from 'node:path'
 import { decryptString } from '../storage/secrets'
 import type {
   ConnectionConfig,
@@ -208,6 +208,32 @@ export class SshSession {
     })
   }
 
+  /**
+   * `mkdir -p` over SFTP. Succeeds if the target already exists and is a
+   * directory; creates any missing parents.
+   */
+  async sftpEnsureDir(remotePath: string): Promise<void> {
+    if (!remotePath || remotePath === '/' || remotePath === '.') return
+    const sftp = await this.sftp()
+    try {
+      const st = await new Promise<{ isDirectory(): boolean }>((resolve, reject) => {
+        sftp.stat(remotePath, (err, s) => (err ? reject(err) : resolve(s)))
+      })
+      if (st.isDirectory()) return
+      throw new Error(`Remote path ${remotePath} exists and is not a directory`)
+    } catch {
+      const parent = posix.dirname(remotePath)
+      if (parent && parent !== remotePath) await this.sftpEnsureDir(parent)
+      await new Promise<void>((resolve, reject) => {
+        sftp.mkdir(remotePath, (err) => {
+          // Race: directory might have been created between stat and mkdir.
+          if (err && !String(err).toLowerCase().includes('failure')) return reject(err)
+          resolve()
+        })
+      })
+    }
+  }
+
   async sftpRename(oldPath: string, newPath: string): Promise<void> {
     const sftp = await this.sftp()
     return new Promise<void>((resolve, reject) => {
@@ -239,47 +265,174 @@ export class SshSession {
     )
   }
 
+  /**
+   * Upload a single file or an entire directory tree.
+   *
+   * - File → `fastPut` with step-level progress.
+   * - Directory → walk the local tree once to compute the grand total
+   *   byte count, `mkdir -p` each required remote sub-directory, then
+   *   `fastPut` every regular file. Progress is aggregated across all
+   *   files so the TransferPanel shows a single percentage.
+   *
+   * Symlinks and special files are skipped silently.
+   */
   async sftpUpload(
     localPath: string,
     remotePath: string,
     onProgress: (transferred: number, total: number) => void
   ): Promise<void> {
     const sftp = await this.sftp()
-    const st = await fs.stat(localPath)
-    const total = st.size
-    const target = remotePath.endsWith('/') ? posix.join(remotePath, basename(localPath)) : remotePath
-    await new Promise<void>((resolve, reject) => {
-      sftp.fastPut(
-        localPath,
-        target,
-        {
-          step: (transferred: number) => onProgress(transferred, total)
-        },
-        (err) => (err ? reject(err) : resolve())
-      )
-    })
+    const st = await fs.lstat(localPath)
+
+    if (st.isFile()) {
+      const total = st.size
+      await new Promise<void>((resolve, reject) => {
+        sftp.fastPut(
+          localPath,
+          remotePath,
+          { step: (t: number) => onProgress(t, total) },
+          (err) => (err ? reject(err) : resolve())
+        )
+      })
+      return
+    }
+
+    if (!st.isDirectory()) return // symlink / device / fifo — nothing to do
+
+    // Collect all regular files under localPath, remembering the relative
+    // path so we can reconstruct it under remotePath.
+    interface PendingFile {
+      from: string
+      relFromRoot: string[]
+      size: number
+    }
+    const files: PendingFile[] = []
+    const dirsRel = new Set<string>()
+
+    const walk = async (absDir: string, relParts: string[]): Promise<void> => {
+      const entries = await fs.readdir(absDir, { withFileTypes: true })
+      for (const e of entries) {
+        const srcAbs = localJoin(absDir, e.name)
+        const rel = [...relParts, e.name]
+        if (e.isDirectory()) {
+          dirsRel.add(rel.join('/'))
+          await walk(srcAbs, rel)
+        } else if (e.isFile()) {
+          const s = await fs.stat(srcAbs)
+          files.push({ from: srcAbs, relFromRoot: rel, size: s.size })
+        }
+      }
+    }
+    await walk(localPath, [])
+
+    const total = files.reduce((a, f) => a + f.size, 0)
+
+    // Ensure the root and every nested sub-dir exists on the remote side.
+    await this.sftpEnsureDir(remotePath)
+    for (const d of dirsRel) {
+      await this.sftpEnsureDir(posix.join(remotePath, d))
+    }
+
+    let doneBytes = 0
+    onProgress(0, total)
+    for (const f of files) {
+      const target = posix.join(remotePath, ...f.relFromRoot)
+      const start = doneBytes
+      await new Promise<void>((resolve, reject) => {
+        sftp.fastPut(
+          f.from,
+          target,
+          {
+            step: (t: number) => onProgress(start + t, total)
+          },
+          (err) => (err ? reject(err) : resolve())
+        )
+      })
+      doneBytes += f.size
+      onProgress(doneBytes, total)
+    }
   }
 
+  /**
+   * Download a single file or an entire directory tree. Mirror of
+   * {@link sftpUpload} — computes total size first and pipes every file
+   * through `fastGet`, creating local sub-directories as needed.
+   */
   async sftpDownload(
     remotePath: string,
     localPath: string,
     onProgress: (transferred: number, total: number) => void
   ): Promise<void> {
     const sftp = await this.sftp()
-    const st = await new Promise<{ size?: number }>((resolve, reject) => {
+    const st = await new Promise<{
+      size?: number
+      isDirectory(): boolean
+      isFile(): boolean
+    }>((resolve, reject) => {
       sftp.stat(remotePath, (err, s) => (err ? reject(err) : resolve(s)))
     })
-    const total = Number(st.size ?? 0)
-    await new Promise<void>((resolve, reject) => {
-      sftp.fastGet(
-        remotePath,
-        localPath,
-        {
-          step: (transferred: number) => onProgress(transferred, total)
-        },
-        (err) => (err ? reject(err) : resolve())
-      )
-    })
+
+    if (st.isFile()) {
+      const total = Number(st.size ?? 0)
+      await new Promise<void>((resolve, reject) => {
+        sftp.fastGet(
+          remotePath,
+          localPath,
+          { step: (t: number) => onProgress(t, total) },
+          (err) => (err ? reject(err) : resolve())
+        )
+      })
+      return
+    }
+
+    if (!st.isDirectory()) return
+
+    interface PendingFile {
+      from: string
+      relFromRoot: string[]
+      size: number
+    }
+    const files: PendingFile[] = []
+    const dirsRel = new Set<string>()
+
+    const walk = async (rDir: string, relParts: string[]): Promise<void> => {
+      const entries = await this.sftpList(rDir)
+      for (const e of entries) {
+        const rel = [...relParts, e.name]
+        if (e.type === 'dir') {
+          dirsRel.add(rel.join('/'))
+          await walk(e.path, rel)
+        } else if (e.type === 'file') {
+          files.push({ from: e.path, relFromRoot: rel, size: e.size })
+        }
+      }
+    }
+    await walk(remotePath, [])
+
+    const total = files.reduce((a, f) => a + f.size, 0)
+
+    await fs.mkdir(localPath, { recursive: true })
+    for (const d of dirsRel) {
+      await fs.mkdir(localJoin(localPath, d.split('/').join(localSep)), { recursive: true })
+    }
+
+    let doneBytes = 0
+    onProgress(0, total)
+    for (const f of files) {
+      const target = localJoin(localPath, ...f.relFromRoot)
+      await fs.mkdir(localDirname(target), { recursive: true })
+      const start = doneBytes
+      await new Promise<void>((resolve, reject) => {
+        sftp.fastGet(
+          f.from,
+          target,
+          { step: (t: number) => onProgress(start + t, total) },
+          (err) => (err ? reject(err) : resolve())
+        )
+      })
+      doneBytes += f.size
+      onProgress(doneBytes, total)
+    }
   }
 
   write(data: string): void {

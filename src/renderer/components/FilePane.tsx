@@ -131,17 +131,19 @@ export function FilePane({ mode, sessionId, title }: Props): JSX.Element {
       cd(entry.path)
       return
     }
+    await transferRow(entry)
+  }
+
+  /** Starts a download (remote pane) or upload (local pane) for any entry,
+   *  including directories — SFTP helper walks them recursively. */
+  async function transferRow(entry: SftpEntry): Promise<void> {
     if (mode === 'remote' && sessionId) {
-      // download to local cwd
       const localCwd = useFsStore.getState().local.cwd
       if (!localCwd) return
       await download(sessionId, entry.path, localCwd)
-    } else if (mode === 'local') {
-      // upload to remote cwd of current remote pane
-      if (sessionId) {
-        const rp = useFsStore.getState().remoteBySession[sessionId]
-        if (rp?.cwd) await upload(sessionId, entry.path, rp.cwd)
-      }
+    } else if (mode === 'local' && sessionId) {
+      const rp = useFsStore.getState().remoteBySession[sessionId]
+      if (rp?.cwd) await upload(sessionId, entry.path, rp.cwd)
     }
   }
 
@@ -266,13 +268,27 @@ export function FilePane({ mode, sessionId, title }: Props): JSX.Element {
                         <Edit3 size={12} />
                       </button>
                     )}
-                    {mode === 'remote' && e.type !== 'dir' && (
-                      <button className="btn-ghost" title="Download" onClick={() => onRowAction(e)}>
+                    {mode === 'remote' && e.type !== 'symlink' && (
+                      <button
+                        className="btn-ghost"
+                        title={e.type === 'dir' ? 'Download folder (recursive)' : 'Download'}
+                        onClick={(ev) => {
+                          ev.stopPropagation()
+                          void transferRow(e)
+                        }}
+                      >
                         <DownloadIcon size={12} />
                       </button>
                     )}
-                    {mode === 'local' && e.type !== 'dir' && sessionId && (
-                      <button className="btn-ghost" title="Upload" onClick={() => onRowAction(e)}>
+                    {mode === 'local' && e.type !== 'symlink' && sessionId && (
+                      <button
+                        className="btn-ghost"
+                        title={e.type === 'dir' ? 'Upload folder (recursive)' : 'Upload'}
+                        onClick={(ev) => {
+                          ev.stopPropagation()
+                          void transferRow(e)
+                        }}
+                      >
                         <Upload size={12} />
                       </button>
                     )}
