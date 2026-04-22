@@ -4,6 +4,8 @@ import {
   type ConnectionMeta,
   type CreateForwardInput,
   type EditSession,
+  type ExportLogOptions,
+  type ExportLogResult,
   type ForwardRule,
   type OpenEditorInput,
   type SaveConnectionInput,
@@ -44,7 +46,9 @@ const api = {
     onData: (sessionId: string, cb: (data: string) => void): Unsubscribe =>
       subscribe<string>(IpcChannels.sessionData(sessionId), cb),
     onExit: (sessionId: string, cb: (info: SessionExitInfo) => void): Unsubscribe =>
-      subscribe<SessionExitInfo>(IpcChannels.sessionExit(sessionId), cb)
+      subscribe<SessionExitInfo>(IpcChannels.sessionExit(sessionId), cb),
+    exportLog: (sessionId: string, opts?: ExportLogOptions): Promise<ExportLogResult> =>
+      ipcRenderer.invoke(IpcChannels.sessionExportLog, sessionId, opts ?? {})
   },
 
   sftp: {

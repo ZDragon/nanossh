@@ -5,7 +5,7 @@ A Windows desktop SSH/SFTP client built on Electron + React + TypeScript. Single
 ## Features
 
 - **Multi-session tabs** — open several SSH connections at once, each with its own terminal and file panes.
-- **Terminal** — xterm.js (UTF-8, 256-color, 10k scrollback), `Ctrl+F` search, `Ctrl+Shift+C/V` copy/paste, `Ctrl+= / - / 0` zoom. Theme follows the app (light/dark).
+- **Terminal** — xterm.js (UTF-8, 256-color, 10k scrollback), `Ctrl+F` search, `Ctrl+Shift+C/V` copy/paste, `Ctrl+= / - / 0` zoom. Right-click opens a context menu with copy selection, copy the entire scrollback buffer, paste, select all, clear, and export the full session log to a file (plain text or raw ANSI). Theme follows the app (light/dark).
 - **SFTP explorer** — navigate, `mkdir`, rename, delete (recursive for folders). Drag files from Windows Explorer or between panes to upload/download. Transfer queue with progress and cancel.
 - **Edit-in-place** — click the pencil icon on a remote file to open it in your editor (VS Code, Notepad++, Sublime, Notepad, …). Every save is auto-uploaded back; close via the Active edits panel.
 - **Port forwarding** — local (`-L`), remote (`-R`) and dynamic SOCKS5 (`-D`) tunnels per session. Live connections / bytes counters in the Forwards dialog.
@@ -48,6 +48,23 @@ npm run package:all      # -mwl (all three; only meaningful on macOS / with CI)
 - Building `.dmg` / signing `.app` requires running on macOS. You can only cross-compile unsigned `.zip`/`.tar.gz` bundles from Windows/Linux.
 - Building `.rpm` from a non-RPM host needs the `rpm` / `rpmbuild` binary in PATH (install via `rpmbuild` on Ubuntu/Debian).
 - For hassle-free multi-platform releases use GitHub Actions — a matrix across `windows-latest` / `macos-latest` / `ubuntu-latest` with `npm ci && npm run package` is the standard approach.
+
+## Copying & exporting terminal output
+
+Right-click inside the terminal for a context menu:
+
+| Action | What it does |
+| --- | --- |
+| **Copy selection** (`Ctrl+Shift+C`) | Copies the current mouse selection to the clipboard. |
+| **Paste** (`Ctrl+Shift+V`) | Pastes clipboard text into the terminal. |
+| **Select all** | Selects the entire visible buffer + scrollback (up to 10k lines). |
+| **Copy entire buffer** | Copies the full scrollback as plain text (all lines concatenated with `\n`). |
+| **Export session log (plain text)** | Saves the *entire* session output so far, with ANSI escapes stripped, to a file of your choice. |
+| **Export session log (raw, with ANSI)** | Saves the raw byte stream as received from the server — colors and control codes are preserved. View with `less -R` / any ANSI-aware viewer, or `cat` in a terminal. |
+| **Clear screen** | Clears the visible area (buffer retained). |
+| **Find** (`Ctrl+F`) | Opens the search panel. |
+
+The session log is captured on the main process side into a private file under the OS temp dir from the moment the session opens — nothing is lost even if the scrollback is full. Temp logs are removed when the session closes (and orphan files from previous crashes are purged on startup).
 
 ## Port forwarding
 

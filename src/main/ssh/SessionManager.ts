@@ -1,6 +1,7 @@
 import type { WebContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { SshSession } from './SshSession'
+import { SessionLog } from './SessionLog'
 import { getFullConnection } from '../storage/connections'
 import {
   IpcChannels,
@@ -8,8 +9,13 @@ import {
   type TerminalSize
 } from '../../shared/types'
 
+interface Entry {
+  session: SshSession
+  log: SessionLog
+}
+
 export class SessionManager {
-  private readonly sessions = new Map<string, SshSession>()
+  private readonly entries = new Map<string, Entry>()
 
   async open(
     connectionId: string,
@@ -20,9 +26,13 @@ export class SessionManager {
     if (!cfg) throw new Error(`Connection ${connectionId} not found`)
 
     const id = randomUUID()
+    const log = new SessionLog(id)
+    await log.open()
+
     const session = new SshSession(id, {
       onData: (chunk: string) => {
         if (!sender.isDestroyed()) sender.send(IpcChannels.sessionData(id), chunk)
+        log.append(chunk)
       },
       onExit: (info: SessionExitInfo) => {
         if (!sender.isDestroyed()) sender.send(IpcChannels.sessionExit(id), info)
@@ -33,30 +43,41 @@ export class SessionManager {
       await session.connect(cfg, size)
     } catch (e) {
       session.close().catch(() => undefined)
+      log.close().catch(() => undefined)
       throw e
     }
-    this.sessions.set(id, session)
+    this.entries.set(id, { session, log })
     return id
   }
 
   async close(id: string): Promise<void> {
-    const s = this.sessions.get(id)
-    if (!s) return
-    this.sessions.delete(id)
-    await s.close()
+    const entry = this.entries.get(id)
+    if (!entry) return
+    this.entries.delete(id)
+    await entry.session.close()
+    await entry.log.close()
   }
 
   async closeAll(): Promise<void> {
     await Promise.all(
-      [...this.sessions.values()].map((s) => s.close().catch(() => undefined))
+      [...this.entries.values()].map(async (e) => {
+        await e.session.close().catch(() => undefined)
+        await e.log.close().catch(() => undefined)
+      })
     )
-    this.sessions.clear()
+    this.entries.clear()
   }
 
   get(id: string): SshSession {
-    const s = this.sessions.get(id)
-    if (!s) throw new Error(`Session ${id} not found`)
-    return s
+    const e = this.entries.get(id)
+    if (!e) throw new Error(`Session ${id} not found`)
+    return e.session
+  }
+
+  getLog(id: string): SessionLog {
+    const e = this.entries.get(id)
+    if (!e) throw new Error(`Session ${id} not found`)
+    return e.log
   }
 
   resize(id: string, size: TerminalSize): void {

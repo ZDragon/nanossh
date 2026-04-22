@@ -193,5 +193,20 @@ export const IpcChannels = {
   forwardStart: 'forward:start',
   forwardStop: 'forward:stop',
   forwardList: 'forward:list',
-  forwardUpdate: 'forward:update'
+  forwardUpdate: 'forward:update',
+
+  sessionExportLog: 'session:exportLog'
 } as const
+
+export interface ExportLogOptions {
+  /** Remove ANSI escapes and most control chars. Default: false (raw). */
+  stripAnsi?: boolean
+  /** Suggested file name shown in the save dialog. */
+  defaultFileName?: string
+}
+
+export interface ExportLogResult {
+  /** Absolute path of the written file, or null if the user cancelled. */
+  savedTo: string | null
+  bytes: number
+}

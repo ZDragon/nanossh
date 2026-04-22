@@ -1,14 +1,17 @@
-import { ipcMain, shell } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { promises as fs } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import {
   IpcChannels,
   type CreateForwardInput,
+  type ExportLogOptions,
+  type ExportLogResult,
   type OpenEditorInput,
   type SftpEntry,
   type TerminalSize
 } from '../shared/types'
+import { stripAnsi } from './ssh/SessionLog'
 import {
   listConnections,
   removeConnection,
@@ -139,4 +142,37 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle(IpcChannels.forwardStop, (_e, id: string) => getPortForwardManager().stop(id))
   ipcMain.handle(IpcChannels.forwardList, () => getPortForwardManager().list())
+
+  // Export session log (full terminal output captured since session opened)
+  ipcMain.handle(
+    IpcChannels.sessionExportLog,
+    async (e, sessionId: string, opts: ExportLogOptions = {}): Promise<ExportLogResult> => {
+      const log = getSessionManager().getLog(sessionId)
+      const raw = await log.readAll()
+      const content = opts.stripAnsi ? stripAnsi(raw) : raw
+
+      const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
+      const defaultName =
+        opts.defaultFileName ?? `session-${sessionId.slice(0, 8)}.${opts.stripAnsi ? 'txt' : 'log'}`
+      const result = await dialog.showSaveDialog(win!, {
+        title: 'Export terminal session log',
+        defaultPath: defaultName,
+        filters: opts.stripAnsi
+          ? [
+              { name: 'Plain text', extensions: ['txt'] },
+              { name: 'All files', extensions: ['*'] }
+            ]
+          : [
+              { name: 'Terminal log', extensions: ['log'] },
+              { name: 'Plain text', extensions: ['txt'] },
+              { name: 'All files', extensions: ['*'] }
+            ]
+      })
+      if (result.canceled || !result.filePath) {
+        return { savedTo: null, bytes: 0 }
+      }
+      await fs.writeFile(result.filePath, content, 'utf8')
+      return { savedTo: result.filePath, bytes: Buffer.byteLength(content, 'utf8') }
+    }
+  )
 }

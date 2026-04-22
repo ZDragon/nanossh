@@ -1,4 +1,5 @@
 import { app, BrowserWindow, shell } from 'electron'
+import { promises as fs } from 'node:fs'
 import { join } from 'node:path'
 import { registerIpcHandlers } from './ipc'
 import { getSessionManager } from './ssh/SessionManager'
@@ -42,7 +43,20 @@ function createWindow(): BrowserWindow {
   return win
 }
 
-app.whenReady().then(() => {
+async function purgeOrphanLogs(): Promise<void> {
+  // Best-effort cleanup of session logs left over from a previous crash.
+  // Runs only on startup, before any session opens, so it cannot race live
+  // writers.
+  const dir = join(app.getPath('temp'), 'ssh-client-logs')
+  try {
+    await fs.rm(dir, { recursive: true, force: true })
+  } catch {
+    /* ignore */
+  }
+}
+
+app.whenReady().then(async () => {
+  await purgeOrphanLogs()
   registerIpcHandlers()
   createWindow()
 

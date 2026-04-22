@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Search, X } from 'lucide-react'
+import { Search, X, Copy, Clipboard, FileText, Download, Eraser } from 'lucide-react'
 import { Terminal as Xterm, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -72,6 +72,10 @@ export function TerminalPane({ sessionId, active }: Props): JSX.Element {
   const [fontSize, setFontSize] = useState(13)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(
+    null
+  )
+  const [toast, setToast] = useState<string | null>(null)
 
   // Create terminal
   useEffect(() => {
@@ -223,9 +227,92 @@ export function TerminalPane({ sessionId, active }: Props): JSX.Element {
     else s.findPrevious(q)
   }
 
+  function flashToast(msg: string, ms = 2200): void {
+    setToast(msg)
+    window.setTimeout(() => setToast((t) => (t === msg ? null : t)), ms)
+  }
+
+  async function copySelection(): Promise<void> {
+    const sel = termRef.current?.getSelection()
+    if (!sel) return
+    try {
+      await navigator.clipboard.writeText(sel)
+      flashToast(`Copied ${sel.length} chars`)
+    } catch (e) {
+      flashToast(`Copy failed: ${String(e)}`)
+    }
+  }
+
+  async function pasteFromClipboard(): Promise<void> {
+    try {
+      const txt = await navigator.clipboard.readText()
+      termRef.current?.paste(txt)
+    } catch (e) {
+      flashToast(`Paste failed: ${String(e)}`)
+    }
+  }
+
+  function selectAll(): void {
+    termRef.current?.selectAll()
+  }
+
+  async function copyBuffer(): Promise<void> {
+    const term = termRef.current
+    if (!term) return
+    const buf = term.buffer.active
+    const lines: string[] = []
+    for (let i = 0; i < buf.length; i++) {
+      const line = buf.getLine(i)
+      if (line) lines.push(line.translateToString(true))
+    }
+    // Trim trailing blank lines
+    while (lines.length && lines[lines.length - 1] === '') lines.pop()
+    const text = lines.join('\n')
+    try {
+      await navigator.clipboard.writeText(text)
+      flashToast(`Copied ${lines.length} lines (${text.length} chars)`)
+    } catch (e) {
+      flashToast(`Copy failed: ${String(e)}`)
+    }
+  }
+
+  function clearScreen(): void {
+    termRef.current?.clear()
+  }
+
+  async function exportLog(stripAnsi: boolean): Promise<void> {
+    try {
+      const result = await window.api.sessions.exportLog(sessionId, {
+        stripAnsi,
+        defaultFileName: `session-${new Date().toISOString().replace(/[:.]/g, '-')}.${
+          stripAnsi ? 'txt' : 'log'
+        }`
+      })
+      if (result.savedTo) {
+        flashToast(`Saved ${result.bytes} bytes → ${result.savedTo}`)
+      }
+    } catch (e) {
+      flashToast(`Export failed: ${String(e)}`)
+    }
+  }
+
+  function openCtxMenu(e: React.MouseEvent): void {
+    e.preventDefault()
+    const sel = termRef.current?.getSelection() ?? ''
+    setCtxMenu({ x: e.clientX, y: e.clientY, hasSelection: sel.length > 0 })
+  }
+
+  function closeCtxMenu(): void {
+    setCtxMenu(null)
+  }
+
   return (
     <div className="relative h-full w-full" style={{ display: active ? 'block' : 'none' }}>
-      <div ref={rootRef} className="h-full w-full bg-[rgb(var(--bg))] p-1" />
+      <div
+        ref={rootRef}
+        className="h-full w-full bg-[rgb(var(--bg))] p-1"
+        onContextMenu={openCtxMenu}
+      />
       {searchOpen && (
         <div className="absolute top-2 right-4 z-10 bg-panel border border-border rounded px-2 py-1 flex items-center gap-1 shadow-lg">
           <Search size={12} className="text-muted" />
@@ -245,6 +332,109 @@ export function TerminalPane({ sessionId, active }: Props): JSX.Element {
           </button>
         </div>
       )}
+
+      {ctxMenu && (
+        <>
+          {/* click-away backdrop */}
+          <div className="fixed inset-0 z-40" onClick={closeCtxMenu} onContextMenu={(e) => {
+            e.preventDefault()
+            closeCtxMenu()
+          }} />
+          <div
+            className="fixed z-50 min-w-[220px] bg-panel border border-border rounded shadow-xl py-1 text-xs"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+            onClick={closeCtxMenu}
+          >
+            <CtxItem
+              icon={<Copy size={12} />}
+              label="Copy selection"
+              shortcut="Ctrl+Shift+C"
+              disabled={!ctxMenu.hasSelection}
+              onClick={copySelection}
+            />
+            <CtxItem
+              icon={<Clipboard size={12} />}
+              label="Paste"
+              shortcut="Ctrl+Shift+V"
+              onClick={pasteFromClipboard}
+            />
+            <CtxItem label="Select all" onClick={selectAll} />
+            <CtxDivider />
+            <CtxItem
+              icon={<FileText size={12} />}
+              label="Copy entire buffer"
+              onClick={copyBuffer}
+            />
+            <CtxDivider />
+            <CtxItem
+              icon={<Download size={12} />}
+              label="Export session log (plain text)…"
+              onClick={() => exportLog(true)}
+            />
+            <CtxItem
+              icon={<Download size={12} />}
+              label="Export session log (raw, with ANSI)…"
+              onClick={() => exportLog(false)}
+            />
+            <CtxDivider />
+            <CtxItem
+              icon={<Eraser size={12} />}
+              label="Clear screen"
+              onClick={clearScreen}
+            />
+            <CtxItem
+              icon={<Search size={12} />}
+              label="Find…"
+              shortcut="Ctrl+F"
+              onClick={() => setSearchOpen(true)}
+            />
+          </div>
+        </>
+      )}
+
+      {toast && (
+        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 rounded bg-black/80 text-white text-[11px] shadow-lg max-w-[80%] truncate">
+          {toast}
+        </div>
+      )}
     </div>
   )
+}
+
+function CtxItem({
+  icon,
+  label,
+  shortcut,
+  disabled,
+  onClick
+}: {
+  icon?: React.ReactNode
+  label: string
+  shortcut?: string
+  disabled?: boolean
+  onClick: () => void
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition ${
+        disabled
+          ? 'text-muted opacity-50 cursor-not-allowed'
+          : 'text-fg hover:bg-[rgb(var(--bg))]'
+      }`}
+    >
+      <span className="w-3 text-muted shrink-0">{icon}</span>
+      <span className="flex-1">{label}</span>
+      {shortcut && <span className="text-muted text-[10px] ml-4">{shortcut}</span>}
+    </button>
+  )
+}
+
+function CtxDivider(): JSX.Element {
+  return <div className="my-1 border-t border-border" />
 }
